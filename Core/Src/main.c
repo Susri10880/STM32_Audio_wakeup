@@ -82,8 +82,13 @@ volatile uint32_t debug_register;
 #define CLAP_PEAK_THRESHOLD    5898
 #define CLAP_CREST_THRESHOLD  3.0f
 
-#define CLAP_REFRACTORY_MS     100
-#define DOUBLE_CLAP_TIMEOUT_MS 1000
+#define CLAP_REFRACTORY_MS       100
+
+#define PATTERN_PAUSE_MIN_MS     400
+#define PATTERN_PAUSE_MAX_MS     800
+
+#define PATTERN_QUICK_MAX_MS     400
+#define PATTERN_RESET_MS        1000
 
 uint8_t led_state = 0;
 uint8_t first_clap_detected = 0;
@@ -95,7 +100,8 @@ uint32_t clap_detect_count = 0;
 uint32_t double_clap_count = 0;
 
 uint8_t clap_sequence_active = 0;
-
+uint8_t clap_pattern_state = 0;
+uint32_t pattern_last_clap_time = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -418,6 +424,7 @@ void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s)
 
 // function to detect claps
 
+
 void Detect_Claps(int16_t *pcm, uint16_t sample_count)
 {
     static int16_t window[CLAP_WINDOW_SIZE];
@@ -427,7 +434,6 @@ void Detect_Claps(int16_t *pcm, uint16_t sample_count)
     {
         window[fill_count++] = pcm[i];
 
-        /* Wait until we have 64 samples */
         if (fill_count == CLAP_WINDOW_SIZE)
         {
             uint32_t peak = 0;
@@ -437,6 +443,7 @@ void Detect_Claps(int16_t *pcm, uint16_t sample_count)
             for (uint16_t j = 0; j < CLAP_WINDOW_SIZE; j++)
             {
                 int32_t sample = window[j];
+
                 uint32_t magnitude =
                     (sample < 0) ? -sample : sample;
 
@@ -449,7 +456,7 @@ void Detect_Claps(int16_t *pcm, uint16_t sample_count)
             uint64_t mean_square =
                 sum_squares / CLAP_WINDOW_SIZE;
 
-            /* Peak threshold and crest factor > 3 */
+            /* Check clap thresholds */
             if ((peak >= CLAP_PEAK_THRESHOLD) &&
                 ((uint64_t)peak * peak > 9ULL * mean_square))
             {
@@ -462,18 +469,32 @@ void Detect_Claps(int16_t *pcm, uint16_t sample_count)
                     last_clap_time = now;
                     clap_detect_count++;
 
-                    if (clap_sequence_active == 0)
+                    uint32_t gap = now - pattern_last_clap_time;
+
+                    if (clap_pattern_state == 0)
                     {
-                        /* Start a new sequence */
-                        clap_sequence_active = 1;
-                        first_clap_detected = 1;
-                        first_clap_time = now;
+                        /* First clap */
+                        clap_pattern_state = 1;
                     }
-                    else
+                    else if (clap_pattern_state == 1)
                     {
-                        if (first_clap_detected == 1)
+                        /* Second clap: must follow the pause */
+                        if (gap >= PATTERN_PAUSE_MIN_MS &&
+                            gap <= PATTERN_PAUSE_MAX_MS)
                         {
-                            /* Second clap: toggle LED */
+                            clap_pattern_state = 2;
+                        }
+                        else
+                        {
+                            /* Incorrect timing: restart */
+                            clap_pattern_state = 0;
+                        }
+                    }
+                    else if (clap_pattern_state == 2)
+                    {
+                        /* Third clap: must be quick */
+                        if (gap <= PATTERN_QUICK_MAX_MS)
+                        {
                             HAL_GPIO_TogglePin(
                                 LED_GREEN_GPIO_Port,
                                 LED_GREEN_Pin
@@ -481,29 +502,25 @@ void Detect_Claps(int16_t *pcm, uint16_t sample_count)
 
                             led_state ^= 1;
                             double_clap_count++;
-
-                            first_clap_detected = 0;
                         }
 
-                        /* Third and subsequent claps are ignored */
+                        /* Pattern completed or failed */
+                        clap_pattern_state = 0;
                     }
+
+                    pattern_last_clap_time = now;
                 }
             }
 
-            /* Reset sequence after 1 second of silence */
-            if ((clap_sequence_active == 1) &&
-                (last_clap_time != 0) &&
-                (HAL_GetTick() - last_clap_time >=
-                 DOUBLE_CLAP_TIMEOUT_MS))
+            /* Reset if no clap arrives for 1 second */
+            if ((clap_pattern_state != 0) &&
+                (HAL_GetTick() - pattern_last_clap_time >=
+                 PATTERN_RESET_MS))
             {
-                clap_sequence_active = 0;
-                first_clap_detected = 0;
+                clap_pattern_state = 0;
             }
 
-            /*
-             * Move last 32 samples forward.
-             * Maintain 64-sample windows with 32-sample hop.
-             */
+            /* Maintain overlapping 64-sample windows */
             for (uint16_t j = 0; j < 32; j++)
             {
                 window[j] = window[j + 32];
@@ -513,6 +530,7 @@ void Detect_Claps(int16_t *pcm, uint16_t sample_count)
         }
     }
 }
+
 
 /* USER CODE END 4 */
 
