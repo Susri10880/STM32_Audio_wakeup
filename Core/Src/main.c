@@ -53,6 +53,14 @@ uint16_t pdm_buffer[PDM_BUFFER_SIZE];
 
 volatile uint32_t dma_half_count = 0;
 volatile uint32_t dma_full_count = 0;
+
+#define PCM_BUFFER_SIZE 512
+
+int16_t pcm_buffer[PCM_BUFFER_SIZE];
+
+
+volatile uint8_t pdm_half_ready = 0;
+volatile uint8_t pdm_full_ready = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,7 +70,15 @@ static void MX_DMA_Init(void);
 static void MX_I2S2_Init(void);
 static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
-
+void Process_PDM_To_PCM(uint16_t *pdm, int16_t *pcm)
+{
+    for (uint32_t i = 0; i < 16; i++)
+    {
+        PDM_Filter(&pdm[i * 64],
+                   &pcm[i * 16],
+                   &PDM1_filter_handler);
+    }
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -117,8 +133,21 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
-	  HAL_Delay(500);
+      if (pdm_half_ready)
+      {
+          pdm_half_ready = 0;
+
+          Process_PDM_To_PCM(&pdm_buffer[0],
+                             &pcm_buffer[0]);
+      }
+
+      if (pdm_full_ready)
+      {
+          pdm_full_ready = 0;
+
+          Process_PDM_To_PCM(&pdm_buffer[1024],
+                             &pcm_buffer[256]);
+      }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -287,6 +316,7 @@ void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
     if (hi2s->Instance == SPI2)
     {
         dma_half_count++;
+        pdm_half_ready = 1;
     }
 }
 
@@ -295,6 +325,7 @@ void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s)
     if (hi2s->Instance == SPI2)
     {
         dma_full_count++;
+        pdm_full_ready = 1;
     }
 }
 /* USER CODE END 4 */
