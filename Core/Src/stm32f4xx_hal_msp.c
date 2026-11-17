@@ -193,6 +193,9 @@ void HAL_I2S_MspInit(I2S_HandleTypeDef* hi2s)
 
     __HAL_LINKDMA(hi2s,hdmarx,hdma_spi2_rx);
 
+    /* I2S2 interrupt Init */
+    HAL_NVIC_SetPriority(SPI2_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(SPI2_IRQn);
     /* USER CODE BEGIN SPI2_MspInit 1 */
 
     /* USER CODE END SPI2_MspInit 1 */
@@ -228,6 +231,9 @@ void HAL_I2S_MspDeInit(I2S_HandleTypeDef* hi2s)
 
     /* I2S2 DMA DeInit */
     HAL_DMA_DeInit(hi2s->hdmarx);
+
+    /* I2S2 interrupt DeInit */
+    HAL_NVIC_DisableIRQ(SPI2_IRQn);
     /* USER CODE BEGIN SPI2_MspDeInit 1 */
 
     /* USER CODE END SPI2_MspDeInit 1 */

@@ -68,6 +68,12 @@ volatile uint32_t usb_busy_count = 0;
 volatile uint32_t usb_error_count = 0;
 
 extern volatile uint8_t usb_tx_ready;
+
+volatile uint16_t pdm_debug[64];
+volatile uint32_t debug_i2scfgr;
+volatile uint32_t debug_i2spr;
+volatile uint32_t debug_standard;
+volatile uint32_t debug_register;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -79,6 +85,14 @@ static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
 void Process_PDM_To_PCM(uint16_t *pdm, int16_t *pcm)
 {
+
+
+	for (uint32_t i = 0; i < 64; i++)
+	{
+	    pdm_debug[i] = pdm[i];
+	}
+
+
     for (uint32_t i = 0; i < 16; i++)
     {
         PDM_Filter(&pdm[i * 64],
@@ -169,12 +183,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
-	  uint8_t message[] = "STM32 USB CDC is working!\r\n";
-
-	  CDC_Transmit_FS(message, sizeof(message) - 1);
-
-	  HAL_Delay(1000);
 
       if (pdm_half_ready)
       {
@@ -292,7 +300,7 @@ static void MX_I2S2_Init(void)
   hi2s2.Instance = SPI2;
   hi2s2.Init.Mode = I2S_MODE_MASTER_RX;
   hi2s2.Init.Standard = I2S_STANDARD_MSB;
-  hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B_EXTENDED;
+  hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B;
   hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
   hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_16K;
   hi2s2.Init.CPOL = I2S_CPOL_LOW;
@@ -303,7 +311,10 @@ static void MX_I2S2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN I2S2_Init 2 */
-
+  debug_i2scfgr = SPI2->I2SCFGR;
+  debug_i2spr = SPI2->I2SPR;
+  debug_standard = hi2s2.Init.Standard;
+  debug_register = SPI2->I2SCFGR;
   /* USER CODE END I2S2_Init 2 */
 
 }

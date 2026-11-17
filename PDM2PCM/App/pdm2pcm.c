@@ -35,7 +35,7 @@ PDM_Filter_Config_t PDM1_filter_config;
 void MX_PDM2PCM_Init(void)
 {
   /* USER CODE BEGIN 2 */
-	uint32_t status;
+//	uint32_t status;
   /* USER CODE END 2 */
 
    /**
@@ -49,30 +49,30 @@ void MX_PDM2PCM_Init(void)
 
   PDM1_filter_config.decimation_factor = PDM_FILTER_DEC_FACTOR_64;
   PDM1_filter_config.output_samples_number = 16;
-  PDM1_filter_config.mic_gain = 0;
+  PDM1_filter_config.mic_gain = 25;
   PDM_Filter_setConfig(&PDM1_filter_handler, &PDM1_filter_config);
 
   /* USER CODE BEGIN 3 */
-  status = PDM_Filter_Init(&PDM1_filter_handler);
-
-  if (status != 0U)
-  {
-      Error_Handler();
-  }
-
-  PDM1_filter_config.decimation_factor = PDM_FILTER_DEC_FACTOR_64;
-  PDM1_filter_config.output_samples_number = 16;
-  PDM1_filter_config.mic_gain = 0;
-
-  status = PDM_Filter_setConfig(
-      &PDM1_filter_handler,
-      &PDM1_filter_config
-  );
-
-  if (status != 0U)
-  {
-      Error_Handler();
-  }
+//  status = PDM_Filter_Init(&PDM1_filter_handler);
+//
+//  if (status != 0U)
+//  {
+//      Error_Handler();
+//  }
+//
+//  PDM1_filter_config.decimation_factor = PDM_FILTER_DEC_FACTOR_64;
+//  PDM1_filter_config.output_samples_number = 16;
+//  PDM1_filter_config.mic_gain = 0;
+//
+//  status = PDM_Filter_setConfig(
+//      &PDM1_filter_handler,
+//      &PDM1_filter_config
+//  );
+//
+//  if (status != 0U)
+//  {
+//      Error_Handler();
+//  }
   /* USER CODE END 3 */
 
 }
@@ -96,18 +96,18 @@ uint8_t MX_PDM2PCM_Process(uint16_t *PDMBuf, uint16_t *PCMBuf)
 //  return (uint8_t) 1;
 //
 
-  uint32_t status;
-
-  status = PDM_Filter(
-      PDMBuf,
-      PCMBuf,
-      &PDM1_filter_handler
-  );
-
-  if (status == 0U)
-  {
-      return 0U;  // Success
-  }
+//  uint32_t status;
+//
+//  status = PDM_Filter(
+//      PDMBuf,
+//      PCMBuf,
+//      &PDM1_filter_handler
+//  );
+//
+//  if (status == 0U)
+//  {
+//      return 0U;  // Success
+//  }
 
   return 1U;      // Error
 
