@@ -69,11 +69,33 @@ volatile uint32_t usb_error_count = 0;
 
 extern volatile uint8_t usb_tx_ready;
 
+// debug variables
 volatile uint16_t pdm_debug[64];
 volatile uint32_t debug_i2scfgr;
 volatile uint32_t debug_i2spr;
 volatile uint32_t debug_standard;
 volatile uint32_t debug_register;
+
+// clap detection variables
+
+#define CLAP_WINDOW_SIZE       64
+#define CLAP_PEAK_THRESHOLD    5898
+#define CLAP_CREST_THRESHOLD  3.0f
+
+#define CLAP_REFRACTORY_MS     100
+#define DOUBLE_CLAP_TIMEOUT_MS 1000
+
+uint8_t led_state = 0;
+uint8_t first_clap_detected = 0;
+
+uint32_t first_clap_time = 0;
+uint32_t last_clap_time = 0;
+
+uint32_t clap_detect_count = 0;
+uint32_t double_clap_count = 0;
+
+uint8_t clap_sequence_active = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -128,6 +150,8 @@ uint8_t USB_Send_PCM(int16_t *pcm, uint16_t sample_count)
 
     return status;
 }
+
+void Detect_Claps(int16_t *pcm, uint16_t sample_count);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -191,6 +215,8 @@ int main(void)
           Process_PDM_To_PCM(&pdm_buffer[0],
                              &pcm_buffer[0]);
 
+          Detect_Claps(&pcm_buffer[0], 256);
+
           USB_Send_PCM(&pcm_buffer[0], 256);
       }
 
@@ -200,6 +226,8 @@ int main(void)
 
           Process_PDM_To_PCM(&pdm_buffer[1024],
                              &pcm_buffer[256]);
+
+          Detect_Claps(&pcm_buffer[256], 256);
 
           USB_Send_PCM(&pcm_buffer[256], 256);
       }
@@ -387,6 +415,105 @@ void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s)
         pdm_full_ready = 1;
     }
 }
+
+// function to detect claps
+
+void Detect_Claps(int16_t *pcm, uint16_t sample_count)
+{
+    static int16_t window[CLAP_WINDOW_SIZE];
+    static uint16_t fill_count = 0;
+
+    for (uint16_t i = 0; i < sample_count; i++)
+    {
+        window[fill_count++] = pcm[i];
+
+        /* Wait until we have 64 samples */
+        if (fill_count == CLAP_WINDOW_SIZE)
+        {
+            uint32_t peak = 0;
+            uint64_t sum_squares = 0;
+
+            /* Calculate peak and sum of squares */
+            for (uint16_t j = 0; j < CLAP_WINDOW_SIZE; j++)
+            {
+                int32_t sample = window[j];
+                uint32_t magnitude =
+                    (sample < 0) ? -sample : sample;
+
+                if (magnitude > peak)
+                    peak = magnitude;
+
+                sum_squares += (uint64_t)(sample * sample);
+            }
+
+            uint64_t mean_square =
+                sum_squares / CLAP_WINDOW_SIZE;
+
+            /* Peak threshold and crest factor > 3 */
+            if ((peak >= CLAP_PEAK_THRESHOLD) &&
+                ((uint64_t)peak * peak > 9ULL * mean_square))
+            {
+                uint32_t now = HAL_GetTick();
+
+                /* Reject repeated detections within 100 ms */
+                if ((last_clap_time == 0) ||
+                    (now - last_clap_time >= CLAP_REFRACTORY_MS))
+                {
+                    last_clap_time = now;
+                    clap_detect_count++;
+
+                    if (clap_sequence_active == 0)
+                    {
+                        /* Start a new sequence */
+                        clap_sequence_active = 1;
+                        first_clap_detected = 1;
+                        first_clap_time = now;
+                    }
+                    else
+                    {
+                        if (first_clap_detected == 1)
+                        {
+                            /* Second clap: toggle LED */
+                            HAL_GPIO_TogglePin(
+                                LED_GREEN_GPIO_Port,
+                                LED_GREEN_Pin
+                            );
+
+                            led_state ^= 1;
+                            double_clap_count++;
+
+                            first_clap_detected = 0;
+                        }
+
+                        /* Third and subsequent claps are ignored */
+                    }
+                }
+            }
+
+            /* Reset sequence after 1 second of silence */
+            if ((clap_sequence_active == 1) &&
+                (last_clap_time != 0) &&
+                (HAL_GetTick() - last_clap_time >=
+                 DOUBLE_CLAP_TIMEOUT_MS))
+            {
+                clap_sequence_active = 0;
+                first_clap_detected = 0;
+            }
+
+            /*
+             * Move last 32 samples forward.
+             * Maintain 64-sample windows with 32-sample hop.
+             */
+            for (uint16_t j = 0; j < 32; j++)
+            {
+                window[j] = window[j + 32];
+            }
+
+            fill_count = 32;
+        }
+    }
+}
+
 /* USER CODE END 4 */
 
 /**
