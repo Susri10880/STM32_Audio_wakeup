@@ -19,10 +19,11 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "pdm2pcm.h"
+#include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "usbd_cdc_if.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -61,6 +62,12 @@ int16_t pcm_buffer[PCM_BUFFER_SIZE];
 
 volatile uint8_t pdm_half_ready = 0;
 volatile uint8_t pdm_full_ready = 0;
+
+volatile uint32_t usb_tx_count = 0;
+volatile uint32_t usb_busy_count = 0;
+volatile uint32_t usb_error_count = 0;
+
+extern volatile uint8_t usb_tx_ready;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -78,6 +85,34 @@ void Process_PDM_To_PCM(uint16_t *pdm, int16_t *pcm)
                    &pcm[i * 16],
                    &PDM1_filter_handler);
     }
+}
+
+uint8_t USB_Send_PCM(int16_t *pcm, uint16_t sample_count)
+{
+    if (usb_tx_ready == 0)
+    {
+        usb_busy_count++;
+        return USBD_BUSY;
+    }
+
+    usb_tx_ready = 0;
+
+    uint8_t status = CDC_Transmit_FS(
+        (uint8_t *)pcm,
+        sample_count * sizeof(int16_t)
+    );
+
+    if (status == USBD_OK)
+    {
+        usb_tx_count++;
+    }
+    else
+    {
+        usb_error_count++;
+        usb_tx_ready = 1;
+    }
+
+    return status;
 }
 /* USER CODE END PFP */
 
@@ -120,6 +155,7 @@ int main(void)
   MX_I2S2_Init();
   MX_CRC_Init();
   MX_PDM2PCM_Init();
+  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
   if (HAL_I2S_Receive_DMA(&hi2s2,
                           pdm_buffer,
@@ -133,12 +169,21 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
+	  uint8_t message[] = "STM32 USB CDC is working!\r\n";
+
+	  CDC_Transmit_FS(message, sizeof(message) - 1);
+
+	  HAL_Delay(1000);
+
       if (pdm_half_ready)
       {
           pdm_half_ready = 0;
 
           Process_PDM_To_PCM(&pdm_buffer[0],
                              &pcm_buffer[0]);
+
+          USB_Send_PCM(&pcm_buffer[0], 256);
       }
 
       if (pdm_full_ready)
@@ -147,6 +192,8 @@ int main(void)
 
           Process_PDM_To_PCM(&pdm_buffer[1024],
                              &pcm_buffer[256]);
+
+          USB_Send_PCM(&pcm_buffer[256], 256);
       }
     /* USER CODE END WHILE */
 
@@ -177,9 +224,9 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 5;
-  RCC_OscInitStruct.PLL.PLLN = 170;
+  RCC_OscInitStruct.PLL.PLLN = 180;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-  RCC_OscInitStruct.PLL.PLLQ = 7;
+  RCC_OscInitStruct.PLL.PLLQ = 6;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -294,6 +341,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_RESET);
